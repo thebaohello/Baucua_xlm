@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bầu Cua XLM - OKX Wallet Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 640px; margin: 32px auto; padding: 16px; background: #f6f8fa; color: #1f2328; }
+    .card { background: #fff; border: 1px solid #d0d7de; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
+    .item { border: 2px solid #d0d7de; border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; background: #fff; }
+    .item.active { border-color: #0969da; background: #ddf4ff; font-weight: bold; }
+    button { padding: 10px 14px; border-radius: 6px; border: 1px solid #1f2328; background: #1f2328; color: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    input { width: 100%; padding: 8px; margin: 6px 0 12px; border: 1px solid #d0d7de; border-radius: 6px; box-sizing: border-box; }
+    .log { font-family: monospace; font-size: 13px; background: #0d1117; color: #e6edf3; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Thử nghiệm Bầu Cua + OKX Wallet (XLM)</h2>
+    <button id="btnConnect">Kết nối OKX Wallet (Stellar)</button>
+    <p id="walletInfo">Chưa kết nối ví.</p>
+  </div>
+
+  <div class="card">
+    <h3>1. Chọn linh vật & mức XLM thử nghiệm</h3>
+    <div class="grid" id="choices"></div>
+
+    <label>Địa chỉ ví Stellar nhận thử nghiệm (G...):</label>
+    <input id="receiver" type="text" placeholder="Dán địa chỉ ví Stellar G... của anh để test" />
+
+    <label>Số lượng XLM gửi thử:</label>
+    <input id="amount" type="number" step="0.1" min="0.1" value="0.1" />
+
+    <button id="btnPlay" disabled>Lắc & Ký gửi XLM thử nghiệm</button>
+    <p id="diceResult">Kết quả xúc xắc: —</p>
+  </div>
+
+  <div class="card">
+    <h3>Nhật ký kiểm tra</h3>
+    <div class="log" id="log">Sẵn sàng thử nghiệm...</div>
+  </div>
+
+  <script>
+    const FACES = ["Bầu", "Cua", "Tôm", "Cá", "Gà", "Nai"];
+    let selectedFace = FACES[0];
+    let connectedAddress = "";
+
+    const choicesEl = document.getElementById("choices");
+    const logEl = document.getElementById("log");
+    const walletInfoEl = document.getElementById("walletInfo");
+    const btnConnect = document.getElementById("btnConnect");
+    const btnPlay = document.getElementById("btnPlay");
+    const diceResultEl = document.getElementById("diceResult");
+
+    function log(msg) {
+      logEl.textContent += `\n[${new Date().toLocaleTimeString()}] ${msg}`;
+    }
+
+    FACES.forEach((face) => {
+      const btn = document.createElement("div");
+      btn.className = "item" + (face === selectedFace ? " active" : "");
+      btn.textContent = face;
+      btn.onclick = () => {
+        selectedFace = face;
+        document.querySelectorAll(".item").forEach((el) => el.classList.remove("active"));
+        btn.classList.add("active");
+      };
+      choicesEl.appendChild(btn);
+    });
+
+    function getStellarProvider() {
+      if (window.okxwallet && window.okxwallet.stellar) {
+        return window.okxwallet.stellar;
+      }
+      return null;
+    }
+
+    btnConnect.onclick = async () => {
+      const stellar = getStellarProvider();
+      if (!stellar) {
+        log("Không tìm thấy window.okxwallet.stellar. Hãy kiểm tra OKX Wallet đã mở khóa và hỗ trợ Stellar trên trình duyệt.");
+        return;
+      }
+      try {
+        const res = await stellar.connect();
+        connectedAddress = res?.address || res?.publicKey || (await stellar.getAddress?.()) || "";
+        if (!connectedAddress) {
+          log("Đã gọi connect() nhưng chưa lấy được địa chỉ ví. Xem phản hồi: " + JSON.stringify(res));
+          return;
+        }
+        walletInfoEl.textContent = "Đã kết nối ví Stellar: " + connectedAddress;
+        btnPlay.disabled = false;
+        log("Kết nối thành công địa chỉ: " + connectedAddress);
+      } catch (err) {
+        log("Lỗi kết nối ví: " + (err?.message || JSON.stringify(err)));
+      }
+    };
+
+    btnPlay.onclick = async () => {
+      const stellar = getStellarProvider();
+      const receiver = document.getElementById("receiver").value.trim();
+      const amount = document.getElementById("amount").value.trim();
+
+      if (!receiver || !receiver.startsWith("G")) {
+        log("Vui lòng nhập địa chỉ ví Stellar hợp lệ bắt đầu bằng chữ G.");
+        return;
+      }
+
+      const roll = [
+        FACES[Math.floor(Math.random() * FACES.length)],
+        FACES[Math.floor(Math.random() * FACES.length)],
+        FACES[Math.floor(Math.random() * FACES.length)]
+      ];
+      const matches = roll.filter((x) => x === selectedFace).length;
+      diceResultEl.textContent = `Kết quả xúc xắc: ${roll.join(" - ")} | Chọn "${selectedFace}" trúng ${matches} ô`;
+      log(`Đã lắc ra: ${roll.join(", ")}. Đang gửi yêu cầu ký giao dịch ${amount} XLM tới OKX Wallet...`);
+
+      try {
+        if (typeof stellar.signAndSendTransaction === "function") {
+          const txRes = await stellar.signAndSendTransaction({
+            destination: receiver,
+            amount: String(amount),
+            memo: `BauCua:${selectedFace}`
+          });
+          log("Phản hồi giao dịch: " + JSON.stringify(txRes));
+        } else {
+          log("Ví đã kết nối. Kiểm tra các phương thức có sẵn trên provider: " + Object.keys(stellar).join(", "));
+        }
+      } catch (err) {
+        log("Giao dịch bị từ chối hoặc lỗi: " + (err?.message || JSON.stringify(err)));
+      }
+    };
+  </script>
+</body>
+</html>
